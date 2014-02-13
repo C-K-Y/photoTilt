@@ -18,7 +18,8 @@ var PhotoTilt = function(options) {
 		tiltCenterOffset,
 		tiltBarIndicatorWidth,
 		tiltBarIndicator,
-		config;
+		config,
+		averageGamma = [];
 
 	config = {
 		maxTilt: options.maxTilt || 20,
@@ -94,49 +95,46 @@ var PhotoTilt = function(options) {
 	var updateImgPosition = function(imgData, pxToMove) {
 		setTranslateX(img, pxToMove);
 	};
+	
+	var onDeviceOrientation = function(eventData) {
+		if (!disableTilt) {
+			if (averageGamma.length > 8) {
+				averageGamma.shift();
+			}
+			averageGamma.push(eventData.gamma);
+			latestTilt = averageGamma.reduce(function(a, b) { return a+b; }) / averageGamma.length;
+		}
+	};
+	
+	var onResize = function() {
+		container.classList.add('is-resizing');
+		clearTimeout(timeoutID);
+		timeoutID = setTimeout(function() {
+			generateViewPort();
+			var mask = document.getElementById('photo-tilt-mask');
+			if (mask) {
+				mask.parentNode.removeChild(mask);
+			}
+			render();
+			container.classList.remove('is-resizing');
+		}, 100);
+	};
 
 	var addEventListeners = function() {
-
 		if (window.DeviceOrientationEvent) {
-
-			var averageGamma = [];
-
-			window.addEventListener('deviceorientation', function(eventData) {
-
-				if (!disableTilt) {
-
-					if (averageGamma.length > 8) {
-						averageGamma.shift();
-					}
-
-					averageGamma.push(eventData.gamma);
-
-					latestTilt = averageGamma.reduce(function(a, b) { return a+b; }) / averageGamma.length;
-
-				}
-
-			}, false);
-
+			averageGamma.length = 0;
+			window.addEventListener('deviceorientation', onDeviceOrientation, false);
 			window.requestAnimationFrame(updatePosition);
-
 		}
-
-		window.addEventListener('resize', function() {
-
-			container.classList.add('is-resizing');
-			window.clearTimeout(timeoutID);
-
-			timeoutID = window.setTimeout(function() {
-
-				generateViewPort();
-				container.innerHTML = "";
-				render();
-				container.classList.remove('is-resizing');
-
-			}, 100);
-
-		}, false);
-
+		window.addEventListener('resize', onResize, false);
+	};
+	
+	var removeEventListeners = function() {
+		if (window.DeviceOrientationEvent) {
+			averageGamma.length = 0;
+			window.removeEventListener('deviceorientation', onDeviceOrientation);
+		}
+		window.removeEventListener('resize', onResize);
 	};
 
 	var setTranslateX = function(node, amount) {
@@ -155,6 +153,7 @@ var PhotoTilt = function(options) {
 
 		mask = document.createElement('div');
 		mask.classList.add('mask');
+		mask.setAttribute('id', 'photo-tilt-mask');
 
 		img.height = viewport.height;
 		resizedImgWidth = (imgData.aspectRatio * img.height);
@@ -227,6 +226,13 @@ var PhotoTilt = function(options) {
 	return {
 		getContainer: function(){
 			return container;
+		},
+		destroy: function() {
+			var mask = document.getElementById('photo-tilt-mask');
+			if (mask) {
+				mask.parentNode.removeChild(mask);
+			}
+			removeEventListeners();
 		}
 	}
 
